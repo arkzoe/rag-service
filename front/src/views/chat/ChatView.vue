@@ -1,11 +1,14 @@
 <script setup>
-import { ref, reactive, nextTick, onMounted } from 'vue'
+import { ref, nextTick, onMounted, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Promotion, Delete, ChatDotRound, UserFilled, Loading } from '@element-plus/icons-vue'
 import { sendMessage } from '@/api/chat'
+import { useChatStore } from '@/stores/chat'
 import MarkdownIt from 'markdown-it'
 import hljs from 'highlight.js'
 import 'highlight.js/styles/github.css'
+
+const chatStore = useChatStore()
 
 // 初始化 Markdown 解析器
 const md = new MarkdownIt({
@@ -27,40 +30,28 @@ const md = new MarkdownIt({
 const messageListRef = ref(null)
 const inputRef = ref(null)
 
-const state = reactive({
-  messages: [],
-  inputMessage: '',
-  loading: false,
-  loadingMore: false,
-  hasMoreHistory: true,
-  pageSize: 20,
-  currentPage: 1,
-})
+const inputMessage = ref('')
+const loading = ref(false)
+const loadingMore = ref(false)
+const hasMoreHistory = ref(false) // 暂时不支持加载更多
+
+// 使用computed获取消息列表，确保响应式
+const messages = computed(() => chatStore.messages)
 
 const loadHistoryMessages = async () => {
-  if (state.loadingMore || !state.hasMoreHistory) return
+  // 从store加载的消息已经包含在messages中
+  // 这里可以添加从后端加载更多历史消息的逻辑
+  if (loadingMore.value || !hasMoreHistory.value) return
 
-  state.loadingMore = true
+  loadingMore.value = true
   try {
-    const historyMessages = [
-      {
-        id: Date.now() - 10000,
-        role: 'assistant',
-        content: '您好！我是RAG智能助手，有什么可以帮助您的吗？',
-        timestamp: Date.now(),
-      },
-    ]
-
-    if (historyMessages.length < state.pageSize) {
-      state.hasMoreHistory = false
-    }
-
-    state.messages.unshift(...historyMessages)
-    state.currentPage++
+    // 如果有后端历史消息接口，在这里调用
+    // 目前使用localStorage中的消息
+    hasMoreHistory.value = false
   } catch (error) {
     ElMessage.error('加载历史消息失败')
   } finally {
-    state.loadingMore = false
+    loadingMore.value = false
   }
 }
 
@@ -73,8 +64,8 @@ const scrollToBottom = () => {
 }
 
 const handleSend = async () => {
-  const message = state.inputMessage.trim()
-  if (!message || state.loading) return
+  const message = inputMessage.value.trim()
+  if (!message || loading.value) return
 
   const userMessage = {
     id: Date.now(),
@@ -83,11 +74,11 @@ const handleSend = async () => {
     timestamp: Date.now(),
   }
 
-  state.messages.push(userMessage)
-  state.inputMessage = ''
+  chatStore.addMessage(userMessage)
+  inputMessage.value = ''
   scrollToBottom()
 
-  state.loading = true
+  loading.value = true
   try {
     const response = await sendMessage(message)
 
@@ -98,7 +89,7 @@ const handleSend = async () => {
       timestamp: Date.now(),
     }
 
-    state.messages.push(assistantMessage)
+    chatStore.addMessage(assistantMessage)
     scrollToBottom()
   } catch (error) {
     const errorMessage = {
@@ -108,10 +99,10 @@ const handleSend = async () => {
       timestamp: Date.now(),
       isError: true,
     }
-    state.messages.push(errorMessage)
+    chatStore.addMessage(errorMessage)
     scrollToBottom()
   } finally {
-    state.loading = false
+    loading.value = false
     nextTick(() => {
       inputRef.value?.focus()
     })
@@ -126,14 +117,8 @@ const handleKeyDown = (e) => {
 }
 
 const clearMessages = () => {
-  state.messages = [
-    {
-      id: Date.now(),
-      role: 'assistant',
-      content: '对话已清空，有什么可以帮助您的吗？',
-      timestamp: Date.now(),
-    },
-  ]
+  chatStore.clearMessages()
+  chatStore.initMessages()
   ElMessage.success('对话已清空')
 }
 
@@ -165,15 +150,15 @@ const formatDate = (timestamp) => {
 
 const shouldShowDate = (index) => {
   if (index === 0) return true
-  const current = new Date(state.messages[index].timestamp).toDateString()
-  const prev = new Date(state.messages[index - 1].timestamp).toDateString()
+  const current = new Date(messages.value[index].timestamp).toDateString()
+  const prev = new Date(messages.value[index - 1].timestamp).toDateString()
   return current !== prev
 }
 
 const handleScroll = () => {
   if (!messageListRef.value) return
   const { scrollTop } = messageListRef.value
-  if (scrollTop < 50 && state.hasMoreHistory && !state.loadingMore) {
+  if (scrollTop < 50 && hasMoreHistory.value && !loadingMore.value) {
     loadHistoryMessages()
   }
 }
@@ -187,7 +172,10 @@ const renderMarkdown = (content) => {
 }
 
 onMounted(() => {
-  loadHistoryMessages()
+  // 初始化聊天记录（如果没有则添加欢迎消息）
+  chatStore.initMessages()
+  // 滚动到底部
+  scrollToBottom()
 })
 </script>
 
@@ -209,19 +197,19 @@ onMounted(() => {
         </div>
 
         <div ref="messageListRef" class="message-list" @scroll="handleScroll">
-          <div v-if="state.loadingMore" class="loading-more">
+          <div v-if="loadingMore" class="loading-more">
             <el-icon class="is-loading"><Loading /></el-icon>
             加载历史消息...
           </div>
 
-          <div v-if="state.messages.length === 0" class="empty-state">
+          <div v-if="messages.length === 0" class="empty-state">
             <el-icon class="empty-icon"><ChatDotRound /></el-icon>
             <p>开始您的对话吧</p>
           </div>
 
           <template v-else>
             <div
-              v-for="(message, index) in state.messages"
+              v-for="(message, index) in messages"
               :key="message.id"
               class="message-wrapper"
             >
@@ -264,7 +252,7 @@ onMounted(() => {
               </div>
             </div>
 
-            <div v-if="state.loading" class="message message-assistant">
+            <div v-if="loading" class="message message-assistant">
               <div class="message-avatar">
                 <el-avatar :size="40" :icon="ChatDotRound" class="assistant" />
               </div>
@@ -288,19 +276,19 @@ onMounted(() => {
           <div class="input-wrapper">
             <el-input
               ref="inputRef"
-              v-model="state.inputMessage"
+              v-model="inputMessage"
               type="textarea"
               :rows="3"
               placeholder="输入消息，按 Enter 发送，Shift + Enter 换行..."
               resize="none"
-              :disabled="state.loading"
+              :disabled="loading"
               @keydown="handleKeyDown"
             />
             <el-button
               type="primary"
               class="send-button"
-              :loading="state.loading"
-              :disabled="!state.inputMessage.trim()"
+              :loading="loading"
+              :disabled="!inputMessage.trim()"
               @click="handleSend"
             >
               <el-icon><Promotion /></el-icon>
