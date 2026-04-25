@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.rag.backend.mapper.ChatHistoryMapper">
+
+    <resultMap id="BaseResultMap" type="com.rag.backend.entity.ChatHistory">
+            <id property="id" column="id" jdbcType="BIGINT"/>
+            <result property="sessionId" column="session_id" jdbcType="VARCHAR"/>
+            <result property="userId" column="user_id" jdbcType="BIGINT"/>
+            <result property="query" column="query" jdbcType="VARCHAR"/>
+            <result property="answer" column="answer" jdbcType="VARCHAR"/>
+            <result property="tokensUsed" column="tokens_used" jdbcType="INTEGER"/>
+            <result property="feedback" column="feedback" jdbcType="TINYINT"/>
+            <result property="createTime" column="create_time" jdbcType="TIMESTAMP"/>
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id,session_id,user_id,query,answer,tokens_used,
+        feedback,create_time
+    </sql>
+</mapper>
