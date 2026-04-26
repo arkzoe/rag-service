@@ -81,8 +81,6 @@ const handleSend = async () => {
   const message = inputMessage.value.trim()
   if (!message || loading.value) return
 
-  console.log('发送消息 - 当前会话ID:', chatSessionStore.currentSessionId)
-
   // 如果没有当前会话，先创建一个
   if (!chatSessionStore.currentSessionId) {
     const newSession = await chatSessionStore.createSession(message.slice(0, 20))
@@ -93,7 +91,6 @@ const handleSend = async () => {
 
   // 保存当前会话ID，防止在请求过程中切换会话导致消息添加到错误的会话
   const targetSessionId = chatSessionStore.currentSessionId
-  console.log('发送消息 - 目标会话ID:', targetSessionId)
 
   const userMessage = {
     id: Date.now(),
@@ -181,13 +178,10 @@ const handleSessionSelect = async (session) => {
 
 // 加载会话历史消息
 const loadSessionHistory = async (sessionId) => {
-  console.log('加载历史消息 - 会话ID:', sessionId)
   if (!sessionId) return
   
   try {
     const history = await getChatHistory(sessionId)
-    console.log('加载历史消息结果 - 会话ID:', sessionId, '记录数:', history?.length || 0)
-    console.log('加载历史消息:', sessionId, history)
     if (history && history.length > 0) {
       // 将历史记录转换为消息格式
       const messages = []
