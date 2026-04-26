@@ -30,8 +30,8 @@ public class RagServiceImpl implements RagService {
     private final ChatHistoryMapper chatHistoryMapper;
 
     @Override
-    public String chat(String question, List<String> userRoles, Long userId) {
-        log.info("RAG问答 - 用户ID: {}, 问题: {}", userId, question);
+    public String chat(String question, List<String> userRoles, Long userId, String sessionId) {
+        log.info("RAG问答 - 用户ID: {}, 会话ID: {}, 问题: {}", userId, sessionId, question);
 
         // 1. 执行向量检索（不带权限过滤）
         SearchRequest searchRequest = SearchRequest.builder()
@@ -64,8 +64,8 @@ public class RagServiceImpl implements RagService {
 
         log.info("RAG问答完成 - 用户ID: {}", userId);
 
-        // 6. 异步保存聊天记录
-        saveHistoryAsync(userId, question, answer, documents.size());
+        // 6. 异步保存聊天记录，使用传入的sessionId
+        saveHistoryAsync(userId, sessionId, question, answer, documents.size());
 
         return answer;
     }
@@ -111,18 +111,27 @@ public class RagServiceImpl implements RagService {
      * 异步保存聊天记录
      */
     @Async("taskExecutor")
-    public void saveHistoryAsync(Long userId, String query, String answer, int sourceCount) {
+    public void saveHistoryAsync(Long userId, String sessionId, String query, String answer, int sourceCount) {
         try {
             ChatHistory history = new ChatHistory();
-            history.setSessionId(UUID.randomUUID().toString());
+            // 使用传入的sessionId，如果没有则生成新的
+            history.setSessionId(sessionId != null && !sessionId.isEmpty() ? sessionId : UUID.randomUUID().toString());
             history.setUserId(userId);
             history.setQuery(query);
             history.setAnswer(answer);
             history.setSourceCount(sourceCount);
             chatHistoryMapper.insert(history);
-            log.debug("聊天记录已异步保存 - 用户ID: {}", userId);
+            log.debug("聊天记录已异步保存 - 用户ID: {}, 会话ID: {}", userId, history.getSessionId());
         } catch (Exception e) {
             log.error("保存聊天记录失败 - 用户ID: {}, 错误: {}", userId, e.getMessage());
         }
+    }
+
+    @Override
+    public List<ChatHistory> getSessionHistory(String sessionId, Long userId) {
+        if (sessionId == null || sessionId.isEmpty()) {
+            return List.of();
+        }
+        return chatHistoryMapper.findBySessionId(sessionId, userId);
     }
 }
