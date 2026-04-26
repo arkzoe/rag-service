@@ -6,8 +6,8 @@ import com.rag.backend.common.result.Result;
 import com.rag.backend.dto.ChatRequest;
 import com.rag.backend.service.RagService;
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -15,10 +15,10 @@ import java.util.List;
 @Slf4j
 @RestController
 @RequestMapping("/chat")
+@RequiredArgsConstructor
 public class ChatController {
 
-    @Autowired
-    private RagService ragService;
+    private final RagService ragService;
 
     @PostMapping("/send")
     @SaCheckPermission("chat:ask")

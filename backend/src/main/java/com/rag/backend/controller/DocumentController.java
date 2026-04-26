@@ -5,6 +5,7 @@ import cn.dev33.satoken.stp.StpUtil;
 import com.rag.backend.common.result.Result;
 import com.rag.backend.entity.Document;
 import com.rag.backend.service.DocumentService;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
@@ -13,10 +14,10 @@ import org.springframework.web.multipart.MultipartFile;
 @Slf4j
 @RestController
 @RequestMapping("/doc")
+@RequiredArgsConstructor
 public class DocumentController {
 
-    @Autowired
-    private DocumentService documentService;
+    private final DocumentService documentService;
 
     @PostMapping("/upload")
     @SaCheckPermission("doc:upload")

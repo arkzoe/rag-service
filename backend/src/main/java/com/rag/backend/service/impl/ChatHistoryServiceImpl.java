@@ -7,13 +7,12 @@ import com.rag.backend.entity.ChatHistory;
 import com.rag.backend.mapper.ChatHistoryMapper;
 import com.rag.backend.infrastructure.QdrantFilterBuilder;
 import com.rag.backend.service.ChatHistoryService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.prompt.Prompt;
-// ✅ 重点：使用全限定名，避免与 org.jdom2.Document 冲突
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
@@ -26,16 +25,16 @@ import java.util.stream.Collectors;
 * @description 针对表【chat_history(会话历史记录表)】的数据库操作Service实现
 */
 @Service
+@RequiredArgsConstructor
 public class ChatHistoryServiceImpl extends ServiceImpl<ChatHistoryMapper, ChatHistory>
     implements ChatHistoryService {
-    @Autowired
-    private VectorStore vectorStore;
 
-    @Autowired
-    private ChatClient chatClient;
+    private final VectorStore vectorStore;
 
-    @Autowired
-    private ChatHistoryMapper chatHistoryMapper;
+    private final ChatClient chatClient;
+
+    private final ChatHistoryMapper chatHistoryMapper;
+
     @Override
     public String chat(String question) {
         // 1. 获取当前用户角色

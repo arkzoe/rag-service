@@ -1,5 +1,6 @@
 package com.rag.backend.service.impl;
 
+import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.rag.backend.common.constant.RedisKeyConstants;
 import com.rag.backend.dto.ChatSessionDTO;
 import com.rag.backend.dto.request.CreateSessionRequest;
@@ -26,7 +27,7 @@ import java.util.stream.Collectors;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class ChatSessionServiceImpl implements ChatSessionService {
+public class ChatSessionServiceImpl extends ServiceImpl<ChatSessionMapper, ChatSession>  implements ChatSessionService {
 
     private final ChatSessionMapper chatSessionMapper;
     private final RedisUtil redisUtil;

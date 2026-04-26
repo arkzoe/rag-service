@@ -5,7 +5,7 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.rag.backend.entity.User;
 import com.rag.backend.service.UserService;
 import com.rag.backend.mapper.UserMapper;
-import org.springframework.beans.factory.annotation.Autowired;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 /**
@@ -14,10 +14,11 @@ import org.springframework.stereotype.Service;
 * @createDate 2026-04-25 09:02:32
 */
 @Service
+@RequiredArgsConstructor
 public class UserServiceImpl extends ServiceImpl<UserMapper, User>
     implements UserService {
-    @Autowired
-    private UserMapper userMapper;
+
+    private final UserMapper userMapper;
 
     /**
      * 根据用户名查询用户

@@ -1,5 +1,6 @@
 package com.rag.backend.service;
 
+import com.baomidou.mybatisplus.extension.service.IService;
 import com.rag.backend.dto.ChatSessionDTO;
 import com.rag.backend.dto.request.CreateSessionRequest;
 import com.rag.backend.dto.request.UpdateSessionRequest;
@@ -10,7 +11,7 @@ import java.util.List;
 /**
  * 对话会话服务接口
  */
-public interface ChatSessionService {
+public interface ChatSessionService extends IService<ChatSession> {
 
     /**
      * 创建对话会话

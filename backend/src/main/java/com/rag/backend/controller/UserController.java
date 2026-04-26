@@ -7,23 +7,18 @@ import com.rag.backend.dto.LoginRequest;
 import com.rag.backend.entity.User;
 import com.rag.backend.service.UserService;
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.Map;
 
 @Slf4j
 @RestController
 @RequestMapping("/user")
+@RequiredArgsConstructor
 public class UserController {
 
-    @Autowired
-    private UserService userService;
-
-    @Autowired
-    private PasswordEncoder passwordEncoder;
+    private final UserService userService;
 
     @PostMapping("/login")
     public Result<?> login(@Valid @RequestBody LoginRequest loginRequest) {

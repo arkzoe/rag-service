@@ -6,13 +6,11 @@ import com.rag.backend.entity.Document;
 import com.rag.backend.infrastructure.RedisUtil;
 import com.rag.backend.mapper.DocumentMapper;
 import com.rag.backend.service.DocumentService;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.tika.Tika;
 import org.apache.tika.exception.TikaException;
-import org.springframework.ai.document.DocumentMetadata;
-import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.vectorstore.VectorStore;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -31,20 +29,15 @@ import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class DocumentServiceImpl extends ServiceImpl<DocumentMapper, Document>
         implements DocumentService {
 
-    @Autowired
-    private DocumentMapper documentMapper;
+    private final DocumentMapper documentMapper;
 
-    @Autowired
-    private VectorStore vectorStore;
+    private final VectorStore vectorStore;
 
-    @Autowired
-    private EmbeddingModel embeddingModel;
-
-    @Autowired
-    private RedisUtil redisUtil;
+    private final RedisUtil redisUtil;
 
     @Value("${file.upload-dir:uploads}")
     private String uploadDir;

@@ -2,16 +2,15 @@ package com.rag.backend.service.impl;
 
 import com.rag.backend.common.config.ChatConfiguration;
 import com.rag.backend.entity.ChatHistory;
-import com.rag.backend.infrastructure.QdrantFilterBuilder;
 import com.rag.backend.mapper.ChatHistoryMapper;
 import com.rag.backend.service.RagService;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
@@ -21,16 +20,14 @@ import java.util.stream.Collectors;
 
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class RagServiceImpl implements RagService {
 
-    @Autowired
-    private VectorStore vectorStore;
+    private final VectorStore vectorStore;
 
-    @Autowired
-    private ChatClient chatClient;
+    private final ChatClient chatClient;
 
-    @Autowired
-    private ChatHistoryMapper chatHistoryMapper;
+    private final ChatHistoryMapper chatHistoryMapper;
 
     @Override
     public String chat(String question, List<String> userRoles, Long userId) {
