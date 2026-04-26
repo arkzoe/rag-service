@@ -62,15 +62,25 @@ mybatis-plus:
       logic-not-delete-value: 0
   mapper-locations: classpath*:/mapper/**/*.xml
 
-# Sa-Token ??
+# Sa-Token 配置
 sa-token:
   token-name: rag-token
+  # Token 有效期，单位秒（默认30天）
   timeout: 2592000
+  # 是否允许同一账号并发登录
   is-concurrent: true
+  # 在多人登录同一账号时，是否共用一个token
   is-share: true
+  # Token 风格
   token-style: uuid
+  # 是否输出日志
   is-log: true
-  jwt-secret-key: your-jwt-secret-key
+  # 是否从 cookie 中读取 token
+  is-read-cookie: false
+  # 是否从请求体中读取 token
+  is-read-body: false
+  # 是否从请求头中读取 token
+  is-read-header: true
 
 # log
 logging:

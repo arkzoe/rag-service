@@ -14,7 +14,8 @@ request.interceptors.request.use(
   (config) => {
     const userStore = useUserStore()
     if (userStore.token) {
-      config.headers.Authorization = `Bearer ${userStore.token}`
+      // 使用后端配置的 token 名称
+      config.headers[userStore.tokenName] = userStore.token
     }
     return config
   },

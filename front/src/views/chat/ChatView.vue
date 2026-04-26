@@ -1,18 +1,39 @@
 <script setup>
-import { ref, nextTick, onMounted, computed } from 'vue'
+import { ref, nextTick, onMounted, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Promotion, Delete, ChatDotRound, UserFilled, Loading } from '@element-plus/icons-vue'
-import { sendMessage } from '@/api/chat'
-import { useChatStore } from '@/stores/chat'
+import { Promotion, Delete, ChatDotRound, UserFilled, Loading, ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
 import MarkdownIt from 'markdown-it'
 import hljs from 'highlight.js'
 import 'highlight.js/styles/github.css'
+import { sendMessage } from '@/api/chat'
+import { useChatStore } from '@/stores/chat'
+import { useChatSessionStore } from '@/stores/chatSession'
+import ChatSessionList from '@/components/ChatSessionList.vue'
 
 const chatStore = useChatStore()
+const chatSessionStore = useChatSessionStore()
+
+const messageListRef = ref(null)
+const inputRef = ref(null)
+const inputMessage = ref('')
+const loading = ref(false)
+const showSessionList = ref(true)
+
+// 当前会话ID - 使用 chatSessionStore 的
+const currentSessionId = computed({
+  get: () => chatSessionStore.currentSessionId,
+  set: (val) => chatSessionStore.setCurrentSession(val)
+})
+
+// 消息列表 - 从 chatStore 获取当前会话的消息
+const messages = computed(() => {
+  if (!currentSessionId.value) return []
+  return chatStore.getSessionMessages(currentSessionId.value)
+})
 
 // 初始化 Markdown 解析器
 const md = new MarkdownIt({
-  html: true,
+  html: false,
   linkify: true,
   typographer: true,
   highlight: function (str, lang) {
@@ -27,32 +48,24 @@ const md = new MarkdownIt({
   }
 })
 
-const messageListRef = ref(null)
-const inputRef = ref(null)
-
-const inputMessage = ref('')
-const loading = ref(false)
-const loadingMore = ref(false)
-const hasMoreHistory = ref(false) // 暂时不支持加载更多
-
-// 使用computed获取消息列表，确保响应式
-const messages = computed(() => chatStore.messages)
-
-const loadHistoryMessages = async () => {
-  // 从store加载的消息已经包含在messages中
-  // 这里可以添加从后端加载更多历史消息的逻辑
-  if (loadingMore.value || !hasMoreHistory.value) return
-
-  loadingMore.value = true
-  try {
-    // 如果有后端历史消息接口，在这里调用
-    // 目前使用localStorage中的消息
-    hasMoreHistory.value = false
-  } catch (error) {
-    ElMessage.error('加载历史消息失败')
-  } finally {
-    loadingMore.value = false
+// 渲染 Markdown
+const renderMarkdown = (content) => {
+  // 确保内容是字符串类型
+  if (!content) return ''
+  
+  // 处理响应式对象（Proxy）
+  let rawContent = content
+  if (typeof content === 'object') {
+    // 如果是 Proxy 对象或普通对象，尝试提取 data 字段或转为字符串
+    rawContent = content.data || content.content || JSON.stringify(content)
   }
+  
+  if (typeof rawContent !== 'string') {
+    console.warn('renderMarkdown received non-string content:', content)
+    rawContent = String(rawContent || '')
+  }
+  
+  return md.render(rawContent)
 }
 
 const scrollToBottom = () => {
@@ -67,6 +80,17 @@ const handleSend = async () => {
   const message = inputMessage.value.trim()
   if (!message || loading.value) return
 
+  // 如果没有当前会话，先创建一个
+  if (!currentSessionId.value) {
+    const newSession = await chatSessionStore.createSession(message.slice(0, 20))
+    if (!newSession) return
+    // 初始化新会话的消息
+    chatStore.initSessionMessages(newSession.sessionId)
+  }
+
+  // 保存当前会话ID，防止在请求过程中切换会话导致消息添加到错误的会话
+  const targetSessionId = currentSessionId.value
+
   const userMessage = {
     id: Date.now(),
     role: 'user',
@@ -74,7 +98,7 @@ const handleSend = async () => {
     timestamp: Date.now(),
   }
 
-  chatStore.addMessage(userMessage)
+  chatStore.addMessage(targetSessionId, userMessage)
   inputMessage.value = ''
   scrollToBottom()
 
@@ -82,14 +106,24 @@ const handleSend = async () => {
   try {
     const response = await sendMessage(message)
 
+    // 处理响应数据，确保是字符串
+    let responseContent = response
+    if (typeof response === 'object' && response !== null) {
+      // 如果响应是对象，尝试提取 data 或 content 字段
+      responseContent = response.data || response.content || JSON.stringify(response)
+    }
+    if (typeof responseContent !== 'string') {
+      responseContent = String(responseContent || '')
+    }
+
     const assistantMessage = {
       id: Date.now() + 1,
       role: 'assistant',
-      content: response,
+      content: responseContent,
       timestamp: Date.now(),
     }
 
-    chatStore.addMessage(assistantMessage)
+    chatStore.addMessage(targetSessionId, assistantMessage)
     scrollToBottom()
   } catch (error) {
     const errorMessage = {
@@ -99,7 +133,7 @@ const handleSend = async () => {
       timestamp: Date.now(),
       isError: true,
     }
-    chatStore.addMessage(errorMessage)
+    chatStore.addMessage(targetSessionId, errorMessage)
     scrollToBottom()
   } finally {
     loading.value = false
@@ -117,8 +151,10 @@ const handleKeyDown = (e) => {
 }
 
 const clearMessages = () => {
-  chatStore.clearMessages()
-  chatStore.initMessages()
+  if (currentSessionId.value) {
+    chatStore.clearSessionMessages(currentSessionId.value)
+    chatStore.initSessionMessages(currentSessionId.value)
+  }
   ElMessage.success('对话已清空')
 }
 
@@ -130,185 +166,218 @@ const formatTime = (timestamp) => {
   })
 }
 
-const formatDate = (timestamp) => {
-  const date = new Date(timestamp)
-  const today = new Date()
-  const yesterday = new Date(today)
-  yesterday.setDate(yesterday.getDate() - 1)
-
-  if (date.toDateString() === today.toDateString()) {
-    return '今天'
-  } else if (date.toDateString() === yesterday.toDateString()) {
-    return '昨天'
-  } else {
-    return date.toLocaleDateString('zh-CN', {
-      month: 'short',
-      day: 'numeric',
-    })
-  }
+const handleSessionSelect = (session) => {
+  // 切换到选中会话，初始化消息
+  chatStore.initSessionMessages(session.sessionId)
+  scrollToBottom()
 }
 
-const shouldShowDate = (index) => {
-  if (index === 0) return true
-  const current = new Date(messages.value[index].timestamp).toDateString()
-  const prev = new Date(messages.value[index - 1].timestamp).toDateString()
-  return current !== prev
-}
-
-const handleScroll = () => {
-  if (!messageListRef.value) return
-  const { scrollTop } = messageListRef.value
-  if (scrollTop < 50 && hasMoreHistory.value && !loadingMore.value) {
-    loadHistoryMessages()
-  }
-}
-
-// 渲染 Markdown 内容 - 智能处理换行
-const renderMarkdown = (content) => {
-  // 保留Markdown结构需要的换行，只压缩多余空行
-  // 将3个及以上连续换行压缩为2个（保留段落分隔）
-  const compressedContent = content.replace(/\n{3,}/g, '\n\n')
-  return md.render(compressedContent)
+const handleSessionCreate = (session) => {
+  // 创建新会话后，初始化消息
+  chatStore.initSessionMessages(session.sessionId)
 }
 
 onMounted(() => {
-  // 初始化聊天记录（如果没有则添加欢迎消息）
-  chatStore.initMessages()
-  // 滚动到底部
+  chatSessionStore.fetchSessions()
+  // 如果有当前会话，初始化该会话的消息
+  if (currentSessionId.value) {
+    chatStore.initSessionMessages(currentSessionId.value)
+  }
   scrollToBottom()
 })
 </script>
 
 <template>
-  <div class="chat-container">
-    <el-card class="chat-card" :body-style="{ padding: 0, height: '100%' }">
-      <div class="chat-layout">
-        <div class="chat-header">
-          <div class="header-left">
-            <el-icon class="chat-icon"><ChatDotRound /></el-icon>
-            <span class="chat-title">智能对话</span>
-          </div>
-          <div class="header-right">
-            <el-button type="danger" link @click="clearMessages">
-              <el-icon><Delete /></el-icon>
-              清空对话
-            </el-button>
-          </div>
-        </div>
+  <div class="chat-page">
+    <!-- 左侧会话列表 -->
+    <div class="session-sidebar" :class="{ 'sidebar-collapsed': !showSessionList }">
+      <div class="session-list-wrapper">
+        <ChatSessionList
+          v-model="currentSessionId"
+          @select="handleSessionSelect"
+          @create="handleSessionCreate"
+        />
+      </div>
+      <!-- 折叠按钮 -->
+      <div class="sidebar-toggle" @click.stop="showSessionList = !showSessionList">
+        <el-icon>
+          <ArrowLeft v-if="showSessionList" />
+          <ArrowRight v-else />
+        </el-icon>
+      </div>
+    </div>
 
-        <div ref="messageListRef" class="message-list" @scroll="handleScroll">
-          <div v-if="loadingMore" class="loading-more">
-            <el-icon class="is-loading"><Loading /></el-icon>
-            加载历史消息...
+    <!-- 右侧聊天区域 -->
+    <div class="chat-container">
+      <el-card class="chat-card" :body-style="{ padding: 0, height: '100%' }">
+        <div class="chat-layout">
+          <div class="chat-header">
+            <div class="header-left">
+              <el-icon class="chat-icon"><ChatDotRound /></el-icon>
+              <span class="chat-title">
+                {{ chatSessionStore.currentSession?.title || '智能对话' }}
+              </span>
+            </div>
+            <div class="header-right">
+              <el-button type="danger" link @click="clearMessages">
+                <el-icon><Delete /></el-icon>
+                清空对话
+              </el-button>
+            </div>
           </div>
 
-          <div v-if="messages.length === 0" class="empty-state">
-            <el-icon class="empty-icon"><ChatDotRound /></el-icon>
-            <p>开始您的对话吧</p>
-          </div>
+          <div ref="messageListRef" class="message-list">
+            <div v-if="messages.length === 0" class="empty-state">
+              <el-icon class="empty-icon"><ChatDotRound /></el-icon>
+              <p>开始您的对话吧</p>
+            </div>
 
-          <template v-else>
-            <div
-              v-for="(message, index) in messages"
-              :key="message.id"
-              class="message-wrapper"
-            >
-              <div v-if="shouldShowDate(index)" class="date-divider">
-                <span>{{ formatDate(message.timestamp) }}</span>
+            <template v-else>
+              <div
+                v-for="message in messages"
+                :key="message.id"
+                class="message-wrapper"
+              >
+                <div
+                  class="message"
+                  :class="[`message-${message.role}`, { 'message-error': message.isError }]"
+                >
+                  <div class="message-avatar">
+                    <el-avatar
+                      :size="40"
+                      :icon="message.role === 'user' ? UserFilled : ChatDotRound"
+                      :class="message.role"
+                    />
+                  </div>
+
+                  <div class="message-content">
+                    <div class="message-header">
+                      <span class="message-role">
+                        {{ message.role === 'user' ? '我' : 'AI助手' }}
+                      </span>
+                      <span class="message-time">{{ formatTime(message.timestamp) }}</span>
+                    </div>
+                    <div class="message-bubble">
+                      <!-- 用户消息纯文本显示 -->
+                      <div v-if="message.role === 'user'" class="message-text">{{ message.content }}</div>
+                      <!-- AI消息使用Markdown渲染 -->
+                      <div
+                        v-else
+                        class="message-markdown"
+                        v-html="renderMarkdown(message.content)"
+                      />
+                    </div>
+                  </div>
+                </div>
               </div>
 
-              <div
-                class="message"
-                :class="[`message-${message.role}`, { 'message-error': message.isError }]"
-              >
+              <div v-if="loading" class="message message-assistant">
                 <div class="message-avatar">
-                  <el-avatar
-                    :size="40"
-                    :icon="message.role === 'user' ? UserFilled : ChatDotRound"
-                    :class="message.role"
-                  />
+                  <el-avatar :size="40" :icon="ChatDotRound" class="assistant" />
                 </div>
-
                 <div class="message-content">
                   <div class="message-header">
-                    <span class="message-role">
-                      {{ message.role === 'user' ? '我' : 'AI助手' }}
-                    </span>
-                    <span class="message-time">{{ formatTime(message.timestamp) }}</span>
+                    <span class="message-role">AI助手</span>
                   </div>
                   <div class="message-bubble">
-                    <!-- 用户消息直接显示，AI消息使用Markdown渲染 -->
-                    <div 
-                      v-if="message.role === 'user'" 
-                      class="message-text"
-                    >{{ message.content }}</div>
-                    <div 
-                      v-else 
-                      class="message-text markdown-body"
-                      v-html="renderMarkdown(message.content)"
-                    ></div>
+                    <div class="typing-indicator">
+                      <span></span>
+                      <span></span>
+                      <span></span>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-
-            <div v-if="loading" class="message message-assistant">
-              <div class="message-avatar">
-                <el-avatar :size="40" :icon="ChatDotRound" class="assistant" />
-              </div>
-              <div class="message-content">
-                <div class="message-header">
-                  <span class="message-role">AI助手</span>
-                </div>
-                <div class="message-bubble">
-                  <div class="typing-indicator">
-                    <span></span>
-                    <span></span>
-                    <span></span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </template>
-        </div>
-
-        <div class="chat-input-area">
-          <div class="input-wrapper">
-            <el-input
-              ref="inputRef"
-              v-model="inputMessage"
-              type="textarea"
-              :rows="3"
-              placeholder="输入消息，按 Enter 发送，Shift + Enter 换行..."
-              resize="none"
-              :disabled="loading"
-              @keydown="handleKeyDown"
-            />
-            <el-button
-              type="primary"
-              class="send-button"
-              :loading="loading"
-              :disabled="!inputMessage.trim()"
-              @click="handleSend"
-            >
-              <el-icon><Promotion /></el-icon>
-              发送
-            </el-button>
+            </template>
           </div>
-          <div class="input-tips">
-            <span>按 Enter 发送，Shift + Enter 换行</span>
+
+          <div class="chat-input-area">
+            <div class="input-wrapper">
+              <el-input
+                ref="inputRef"
+                v-model="inputMessage"
+                type="textarea"
+                :rows="3"
+                placeholder="输入消息，按 Enter 发送，Shift + Enter 换行..."
+                resize="none"
+                :disabled="loading"
+                @keydown="handleKeyDown"
+              />
+              <el-button
+                type="primary"
+                class="send-button"
+                :loading="loading"
+                :disabled="!inputMessage.trim()"
+                @click="handleSend"
+              >
+                <el-icon><Promotion /></el-icon>
+                发送
+              </el-button>
+            </div>
+            <div class="input-tips">
+              <span>按 Enter 发送，Shift + Enter 换行</span>
+            </div>
           </div>
         </div>
-      </div>
-    </el-card>
+      </el-card>
+    </div>
   </div>
 </template>
 
 <style scoped lang="scss">
+.chat-page {
+  display: flex;
+  height: calc(100vh - 60px);
+}
+
+.session-sidebar {
+  width: 300px;
+  flex-shrink: 0;
+  position: relative;
+  transition: width 0.3s;
+  display: flex;
+
+  &.sidebar-collapsed {
+    width: 0;
+
+    .session-list-wrapper {
+      overflow: hidden;
+    }
+  }
+
+  .session-list-wrapper {
+    flex: 1;
+    overflow: hidden;
+  }
+
+  .sidebar-toggle {
+    position: absolute;
+    right: -20px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 20px;
+    height: 60px;
+    background: #fff;
+    border: 1px solid #ebeef5;
+    border-left: none;
+    border-radius: 0 4px 4px 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 100;
+    box-shadow: 2px 0 4px rgba(0, 0, 0, 0.1);
+
+    &:hover {
+      background: #f5f7fa;
+    }
+  }
+}
+
 .chat-container {
-  height: calc(100vh - 100px);
-  max-width: 1200px;
-  margin: 0 auto;
+  flex: 1;
+  padding: 20px;
+  overflow: hidden;
 }
 
 .chat-card {
@@ -357,13 +426,6 @@ onMounted(() => {
   padding: 20px;
   background: #f5f7fa;
 
-  .loading-more {
-    text-align: center;
-    padding: 12px;
-    color: #909399;
-    font-size: 12px;
-  }
-
   .empty-state {
     display: flex;
     flex-direction: column;
@@ -380,20 +442,6 @@ onMounted(() => {
     p {
       font-size: 16px;
     }
-  }
-}
-
-.date-divider {
-  text-align: center;
-  margin: 20px 0;
-
-  span {
-    display: inline-block;
-    padding: 4px 12px;
-    background: #dcdfe6;
-    color: #606266;
-    font-size: 12px;
-    border-radius: 12px;
   }
 }
 
@@ -484,88 +532,77 @@ onMounted(() => {
 }
 
 .message-text {
-  white-space: normal;
+  white-space: pre-wrap;
 }
 
-// Markdown 样式 - 紧凑间距
-.markdown-body {
-  line-height: 1.5;
-  font-size: 14px;
-
-  :deep(h1) {
-    font-size: 1.3em;
-    margin: 0.15em 0 0.1em 0;
-    border-bottom: 1px solid #eaecef;
-    padding-bottom: 0.1em;
-  }
-
-  :deep(h2) {
-    font-size: 1.15em;
-    margin: 0.15em 0 0.1em 0;
-    border-bottom: 1px solid #eaecef;
-    padding-bottom: 0.1em;
-  }
-
-  :deep(h3) {
-    font-size: 1.05em;
-    margin: 0.1em 0 0.05em 0;
-  }
-
+// Markdown 样式
+.message-markdown {
   :deep(p) {
-    margin: 0.1em 0;
-    line-height: 1.5;
-  }
+    margin: 0 0 8px 0;
+    line-height: 1.6;
 
-  :deep(ul), :deep(ol) {
-    margin: 0.1em 0;
-    padding-left: 1em;
-  }
-
-  :deep(li) {
-    margin: 0.05em 0;
-    line-height: 1.4;
-  }
-
-  :deep(li > p) {
-    margin: 0;
-  }
-
-  :deep(code) {
-    background: #f6f8fa;
-    padding: 0 3px;
-    border-radius: 3px;
-    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
-    font-size: 0.85em;
-  }
-
-  :deep(pre) {
-    background: #f6f8fa;
-    padding: 6px 10px;
-    border-radius: 6px;
-    overflow-x: auto;
-    margin: 0.15em 0;
-
-    code {
-      background: none;
-      padding: 0;
+    &:last-child {
+      margin-bottom: 0;
     }
   }
 
+  :deep(pre) {
+    margin: 8px 0;
+    padding: 12px;
+    background: #f6f8fa;
+    border-radius: 6px;
+    overflow-x: auto;
+
+    code {
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+  }
+
+  :deep(code) {
+    font-family: 'Consolas', 'Monaco', monospace;
+    background: #f6f8fa;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 13px;
+  }
+
+  :deep(ul), :deep(ol) {
+    margin: 8px 0;
+    padding-left: 20px;
+  }
+
+  :deep(li) {
+    margin: 4px 0;
+  }
+
+  :deep(h1), :deep(h2), :deep(h3), :deep(h4) {
+    margin: 12px 0 8px 0;
+    font-weight: 600;
+  }
+
+  :deep(h1) { font-size: 18px; }
+  :deep(h2) { font-size: 16px; }
+  :deep(h3) { font-size: 14px; }
+
   :deep(blockquote) {
+    margin: 8px 0;
+    padding: 8px 12px;
     border-left: 4px solid #dfe2e5;
-    padding-left: 0.6em;
-    margin: 0.15em 0;
+    background: #f6f8fa;
     color: #6a737d;
   }
 
   :deep(table) {
     border-collapse: collapse;
+    margin: 8px 0;
     width: 100%;
-    margin: 0.15em 0;
 
     th, td {
       border: 1px solid #dfe2e5;
-      padding: 3px 6px;
+      padding: 6px 12px;
+      text-align: left;
     }
 
     th {
@@ -581,24 +618,6 @@ onMounted(() => {
     &:hover {
       text-decoration: underline;
     }
-  }
-
-  :deep(strong) {
-    font-weight: 600;
-  }
-
-  :deep(em) {
-    font-style: italic;
-  }
-
-  // 移除空行和多余间距
-  :deep(br) {
-    display: none;
-  }
-
-  // 段落之间的间距
-  :deep(p + p) {
-    margin-top: 0.15em;
   }
 }
 
@@ -625,9 +644,7 @@ onMounted(() => {
 }
 
 @keyframes typing {
-  0%,
-  80%,
-  100% {
+  0%, 80%, 100% {
     transform: scale(0);
   }
   40% {
@@ -669,8 +686,21 @@ onMounted(() => {
 }
 
 @media (max-width: 768px) {
+  .session-sidebar {
+    position: fixed;
+    left: 0;
+    top: 60px;
+    bottom: 0;
+    z-index: 100;
+    background: #fff;
+
+    &.sidebar-collapsed {
+      width: 0;
+    }
+  }
+
   .chat-container {
-    height: calc(100vh - 60px);
+    padding: 10px;
   }
 
   .message-content {

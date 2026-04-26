@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.rag.backend.mapper.ChatSessionMapper">
+
+    <resultMap id="BaseResultMap" type="com.rag.backend.entity.ChatSession">
+        <id property="id" column="id" jdbcType="BIGINT"/>
+        <result property="sessionId" column="session_id" jdbcType="VARCHAR"/>
+        <result property="userId" column="user_id" jdbcType="BIGINT"/>
+        <result property="title" column="title" jdbcType="VARCHAR"/>
+        <result property="description" column="description" jdbcType="VARCHAR"/>
+        <result property="messageCount" column="message_count" jdbcType="INTEGER"/>
+        <result property="lastMessagePreview" column="last_message_preview" jdbcType="VARCHAR"/>
+        <result property="createdAt" column="created_at" jdbcType="TIMESTAMP"/>
+        <result property="updatedAt" column="updated_at" jdbcType="TIMESTAMP"/>
+        <result property="isDeleted" column="is_deleted" jdbcType="INTEGER"/>
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id, session_id, user_id, title, description, message_count,
+        last_message_preview, created_at, updated_at, is_deleted
+    </sql>
+
+    <!-- 查询用户的对话列表（按时间倒序） -->
+    <select id="selectByUserId" resultMap="BaseResultMap">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM chat_session
+        WHERE user_id = #{userId}
+        AND is_deleted = 0
+        ORDER BY updated_at DESC
+    </select>
+
+    <!-- 根据sessionId查询 -->
+    <select id="selectBySessionId" resultMap="BaseResultMap">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM chat_session
+        WHERE session_id = #{sessionId}
+        AND is_deleted = 0
+    </select>
+
+</mapper>
