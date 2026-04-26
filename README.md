@@ -54,8 +54,8 @@
 ### 1. 克隆项目
 
 ```bash
-git clone https://github.com/yourusername/rag-system.git
-cd rag-system
+git clone https://github.com/arkzoe/rag-service.git
+cd rag-service
 ```
 
 ### 2. 后端配置
