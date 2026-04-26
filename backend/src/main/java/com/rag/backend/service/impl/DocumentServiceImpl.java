@@ -1,11 +1,14 @@
 package com.rag.backend.service.impl;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rag.backend.entity.Document;
 import com.rag.backend.infrastructure.RedisUtil;
 import com.rag.backend.mapper.DocumentMapper;
 import com.rag.backend.service.DocumentService;
+import io.qdrant.client.QdrantClient;
+import io.qdrant.client.grpc.Points;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.tika.Tika;
@@ -38,6 +41,11 @@ public class DocumentServiceImpl extends ServiceImpl<DocumentMapper, Document>
     private final VectorStore vectorStore;
 
     private final RedisUtil redisUtil;
+
+    private final QdrantClient qdrantClient;
+
+    @Value("${spring.ai.vectorstore.qdrant.collection-name:rag_collection}")
+    private String collectionName;
 
     @Value("${file.upload-dir:uploads}")
     private String uploadDir;
@@ -78,10 +86,16 @@ public class DocumentServiceImpl extends ServiceImpl<DocumentMapper, Document>
                     : List.of("ALL");
             String rolesJson = new ObjectMapper().writeValueAsString(roleList);
 
+            // 简化文件类型存储，只取主要部分
+            String fileType = file.getContentType();
+            if (fileType != null && fileType.length() > 50) {
+                fileType = fileType.substring(0, 50);
+            }
+
             Document doc = new Document()
                     .setFileName(originalFilename)
                     .setFilePath(relativePath.toString())
-                    .setFileType(file.getContentType())
+                    .setFileType(fileType)
                     .setFileSize(file.getSize())
                     .setContentText(content.substring(0, Math.min(content.length(), 10000))) // 限制存储长度
                     .setAllowedRoles(rolesJson)
@@ -116,10 +130,12 @@ public class DocumentServiceImpl extends ServiceImpl<DocumentMapper, Document>
                     "文件大小超过限制，最大允许: " + (maxFileSize / 1024 / 1024) + "MB");
         }
 
-        // 校验文件类型
+        // 校验文件类型（通过ContentType或文件扩展名）
         String contentType = file.getContentType();
-        if (contentType == null) {
-            throw new IllegalArgumentException("无法识别文件类型");
+        String originalFilename = file.getOriginalFilename();
+        String ext = "";
+        if (originalFilename != null && originalFilename.contains(".")) {
+            ext = originalFilename.substring(originalFilename.lastIndexOf(".")).toLowerCase();
         }
 
         List<String> allowedTypes = List.of(
@@ -131,8 +147,11 @@ public class DocumentServiceImpl extends ServiceImpl<DocumentMapper, Document>
                 "text/x-markdown"
         );
 
-        if (!allowedTypes.contains(contentType)) {
-            throw new IllegalArgumentException("不支持的文件类型: " + contentType);
+        List<String> allowedExts = List.of(".pdf", ".doc", ".docx", ".txt", ".md");
+
+        // 如果ContentType不在允许列表中，检查文件扩展名
+        if (!allowedTypes.contains(contentType) && !allowedExts.contains(ext)) {
+            throw new IllegalArgumentException("不支持的文件类型: " + contentType + ", 扩展名: " + ext);
         }
     }
 
@@ -194,5 +213,103 @@ public class DocumentServiceImpl extends ServiceImpl<DocumentMapper, Document>
         } catch (Exception e) {
             log.warn("文档信息缓存失败: {}", e.getMessage());
         }
+    }
+
+    @Override
+    public List<Document> getUserDocuments(Long userId) {
+        LambdaQueryWrapper<Document> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(Document::getUploadUserId, userId)
+               .orderByDesc(Document::getCreateTime);
+        return documentMapper.selectList(wrapper);
+    }
+
+    @Override
+    public void deleteDocument(Long userId, Long docId) {
+        // 1. 查询文档
+        Document doc = documentMapper.selectById(docId);
+        if (doc == null) {
+            throw new RuntimeException("文档不存在");
+        }
+        if (!doc.getUploadUserId().equals(userId)) {
+            throw new RuntimeException("无权删除该文档");
+        }
+
+        log.info("开始删除文档 - ID: {}, 文件名: {}", docId, doc.getFileName());
+
+        // 2. 删除Qdrant中的向量数据
+        try {
+            deleteFromVectorStore(docId);
+        } catch (Exception e) {
+            log.error("删除Qdrant向量失败: {}", e.getMessage(), e);
+            throw new RuntimeException("删除向量数据失败: " + e.getMessage());
+        }
+
+        // 3. 删除本地文件
+        try {
+            Path filePath = Paths.get(uploadDir, doc.getFilePath());
+            Files.deleteIfExists(filePath);
+            log.info("本地文件已删除: {}", filePath);
+        } catch (IOException e) {
+            log.warn("删除本地文件失败: {}", e.getMessage());
+        }
+
+        // 4. 删除数据库记录
+        documentMapper.deleteById(docId);
+
+        // 5. 清除Redis缓存
+        redisUtil.delete("doc:info:" + docId);
+
+        log.info("文档删除完成 - ID: {}", docId);
+    }
+
+    /**
+     * 从Qdrant中删除文档相关的向量数据
+     */
+    private void deleteFromVectorStore(Long docId) throws Exception {
+        String docIdStr = docId.toString();
+
+        // 构建过滤条件：doc_id 等于指定值
+        var condition = Points.Condition.newBuilder()
+                .setField(Points.FieldCondition.newBuilder()
+                        .setKey("doc_id")
+                        .setMatch(Points.Match.newBuilder().setText(docIdStr).build())
+                        .build())
+                .build();
+
+        var filter = Points.Filter.newBuilder()
+                .addMust(condition)
+                .build();
+
+        // 先查询有多少条记录
+        var scrollRequest = Points.ScrollPoints.newBuilder()
+                .setCollectionName(collectionName)
+                .setFilter(filter)
+                .setLimit(1000)
+                .setWithPayload(Points.WithPayloadSelector.newBuilder().setEnable(false).build())
+                .build();
+
+        var scrollResponse = qdrantClient.scrollAsync(scrollRequest).get();
+        List<Points.RetrievedPoint> points = scrollResponse.getResultList();
+
+        if (points.isEmpty()) {
+            log.info("Qdrant中没有找到文档 {} 的向量数据", docId);
+            return;
+        }
+
+        // 提取所有点的ID
+        List<Points.PointId> pointIds = points.stream()
+                .map(Points.RetrievedPoint::getId)
+                .toList();
+
+        // 批量删除
+        var deleteRequest = Points.DeletePoints.newBuilder()
+                .setCollectionName(collectionName)
+                .setPoints(Points.PointsSelector.newBuilder()
+                        .setPoints(Points.PointsIdsList.newBuilder().addAllIds(pointIds).build())
+                        .build())
+                .build();
+
+        qdrantClient.deleteAsync(deleteRequest).get();
+        log.info("已从Qdrant删除文档 {} 的 {} 条向量数据", docId, pointIds.size());
     }
 }

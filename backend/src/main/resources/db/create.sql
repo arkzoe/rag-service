@@ -52,7 +52,7 @@ CREATE TABLE `doc_metadata` (
                                 `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
                                 `file_name` VARCHAR(255) NOT NULL COMMENT '原始文件名',
                                 `file_path` VARCHAR(500) NOT NULL COMMENT '文件存储路径/URL',
-                                `file_type` VARCHAR(20) DEFAULT 'PDF' COMMENT '文件类型: PDF, DOCX, TXT',
+                                `file_type` VARCHAR(100) DEFAULT 'PDF' COMMENT '文件类型: PDF, DOCX, TXT, MD等',
                                 `file_size` BIGINT DEFAULT 0 COMMENT '文件大小 (字节)',
                                 `content_text` LONGTEXT COMMENT '文件解析后的纯文本内容', -- ✅ 新增此字段
                                 `allowed_roles` JSON DEFAULT NULL COMMENT '可见角色列表 (JSON数组: ["HR", "ADMIN"])',

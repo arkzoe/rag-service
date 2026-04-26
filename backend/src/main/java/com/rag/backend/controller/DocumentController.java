@@ -11,6 +11,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.List;
+
 @Slf4j
 @RestController
 @RequestMapping("/doc")
@@ -41,6 +43,32 @@ public class DocumentController {
         } catch (Exception e) {
             log.error("文件上传失败 - 用户ID: {}, 错误: {}", userId, e.getMessage(), e);
             return Result.error("文件上传失败: " + e.getMessage());
+        }
+    }
+
+    @GetMapping("/list")
+    @SaCheckPermission("doc:upload")
+    public Result<List<Document>> list() {
+        Long userId = StpUtil.getLoginIdAsLong();
+        log.info("获取文档列表 - 用户ID: {}", userId);
+
+        List<Document> documents = documentService.getUserDocuments(userId);
+        return Result.success(documents);
+    }
+
+    @PostMapping("/delete/{docId}")
+    @SaCheckPermission("doc:upload")
+    public Result<?> delete(@PathVariable Long docId) {
+        Long userId = StpUtil.getLoginIdAsLong();
+        log.info("删除文档请求 - 用户ID: {}, 文档ID: {}", userId, docId);
+
+        try {
+            documentService.deleteDocument(userId, docId);
+            log.info("文档删除成功 - 文档ID: {}", docId);
+            return Result.success("删除成功");
+        } catch (Exception e) {
+            log.error("文档删除失败 - 文档ID: {}, 错误: {}", docId, e.getMessage(), e);
+            return Result.error(e.getMessage());
         }
     }
 }

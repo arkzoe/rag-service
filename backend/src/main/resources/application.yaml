@@ -49,6 +49,13 @@ spring:
     async:
       request-timeout: 120000  # 异步请求超时120秒
 
+  # 文件上传配置
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: 50MB
+      max-request-size: 100MB
+
 # MyBatis Plus
 mybatis-plus:
   configuration:
