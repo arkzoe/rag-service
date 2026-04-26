@@ -15,3 +15,17 @@ export const uploadFile = (file, roles, onProgress) => {
     onUploadProgress: onProgress,
   })
 }
+
+export const getDocumentList = () => {
+  return request({
+    url: '/doc/list',
+    method: 'get',
+  })
+}
+
+export const deleteDocument = (docId) => {
+  return request({
+    url: `/doc/delete/${docId}`,
+    method: 'post',
+  })
+}

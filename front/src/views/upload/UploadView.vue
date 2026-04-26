@@ -1,12 +1,14 @@
 <script setup>
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Upload, Document, Delete, Check, Close, RefreshRight } from '@element-plus/icons-vue'
-import { uploadFile } from '@/api/document'
+import { Upload, Document, Delete, Check, Close, RefreshRight, FolderOpened } from '@element-plus/icons-vue'
+import { uploadFile, getDocumentList, deleteDocument } from '@/api/document'
 
 const uploadRef = ref(null)
 const fileList = ref([])
 const uploading = ref(false)
+const uploadedDocuments = ref([])
+const loadingDocuments = ref(false)
 
 const CHUNK_SIZE = 2 * 1024 * 1024
 
@@ -173,6 +175,52 @@ const getStatusText = (status) => {
   }
   return texts[status] || '未知'
 }
+
+// 获取已上传文档列表
+const fetchUploadedDocuments = async () => {
+  loadingDocuments.value = true
+  try {
+    const data = await getDocumentList()
+    uploadedDocuments.value = data || []
+  } catch (error) {
+    ElMessage.error('获取文档列表失败')
+  } finally {
+    loadingDocuments.value = false
+  }
+}
+
+// 删除已上传文档
+const handleDeleteDocument = async (doc) => {
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除文件 "${doc.fileName}" 吗？\n删除后将同时移除向量数据库中的数据。`,
+      '确认删除',
+      {
+        confirmButtonText: '删除',
+        cancelButtonText: '取消',
+        type: 'warning',
+      }
+    )
+    await deleteDocument(doc.id)
+    ElMessage.success('删除成功')
+    fetchUploadedDocuments()
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error(error.message || '删除失败')
+    }
+  }
+}
+
+// 格式化日期
+const formatDate = (dateStr) => {
+  if (!dateStr) return ''
+  const date = new Date(dateStr)
+  return date.toLocaleString('zh-CN')
+}
+
+onMounted(() => {
+  fetchUploadedDocuments()
+})
 </script>
 
 <template>
@@ -285,6 +333,58 @@ const getStatusText = (status) => {
             </div>
           </div>
         </div>
+      </div>
+
+      <!-- 已上传文件列表 -->
+      <el-divider />
+      <div class="uploaded-documents">
+        <div class="section-header">
+          <span class="title">
+            <el-icon><FolderOpened /></el-icon>
+            已上传文件 ({{ uploadedDocuments.length }})
+          </span>
+          <el-button type="primary" link size="small" @click="fetchUploadedDocuments" :loading="loadingDocuments">
+            <el-icon><RefreshRight /></el-icon>
+            刷新
+          </el-button>
+        </div>
+
+        <el-table :data="uploadedDocuments" v-loading="loadingDocuments" style="width: 100%" empty-text="暂无已上传文件">
+          <el-table-column prop="fileName" label="文件名" min-width="200">
+            <template #default="{ row }">
+              <div class="document-name">
+                <el-icon><Document /></el-icon>
+                <span :title="row.fileName">{{ row.fileName }}</span>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column prop="fileSize" label="大小" width="120">
+            <template #default="{ row }">
+              {{ formatFileSize(row.fileSize) }}
+            </template>
+          </el-table-column>
+          <el-table-column prop="fileType" label="类型" width="150" />
+          <el-table-column prop="createTime" label="上传时间" width="180">
+            <template #default="{ row }">
+              {{ formatDate(row.createTime) }}
+            </template>
+          </el-table-column>
+          <el-table-column prop="status" label="状态" width="100">
+            <template #default="{ row }">
+              <el-tag v-if="row.status === 1" type="success" size="small">已处理</el-tag>
+              <el-tag v-else-if="row.status === 0" type="warning" size="small">处理中</el-tag>
+              <el-tag v-else type="danger" size="small">失败</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="100" fixed="right">
+            <template #default="{ row }">
+              <el-button type="danger" link size="small" @click="handleDeleteDocument(row)">
+                <el-icon><Delete /></el-icon>
+                删除
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
       </div>
     </el-card>
   </div>
@@ -486,6 +586,44 @@ const getStatusText = (status) => {
       display: flex;
       align-items: center;
       gap: 8px;
+    }
+  }
+}
+
+.uploaded-documents {
+  margin-top: 24px;
+
+  .section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+
+    .title {
+      font-size: 16px;
+      font-weight: 600;
+      color: #303133;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+  }
+
+  .document-name {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    .el-icon {
+      font-size: 18px;
+      color: #409eff;
+    }
+
+    span {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 250px;
     }
   }
 }
