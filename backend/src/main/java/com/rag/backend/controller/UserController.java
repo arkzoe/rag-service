@@ -59,9 +59,9 @@ public class UserController {
 
     @PostMapping("/logout")
     public Result<?> logout() {
-        Long userId = (Long) StpUtil.getLoginIdDefaultNull();
+        Object loginId = StpUtil.getLoginIdDefaultNull();
         StpUtil.logout();
-        log.info("用户登出: {}", userId);
+        log.info("用户登出: {}", loginId);
         return Result.success("登出成功");
     }
 

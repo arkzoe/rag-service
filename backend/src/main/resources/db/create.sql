@@ -82,6 +82,22 @@ CREATE TABLE `chat_history` (
                                 KEY `idx_session_id` (`session_id`),
                                 KEY `idx_user_time` (`user_id`, `create_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='会话历史记录表';
+-- 对话会话表
+CREATE TABLE IF NOT EXISTS chat_session (
+                                            id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
+                                            session_id VARCHAR(64) NOT NULL COMMENT '会话唯一标识(UUID)',
+                                            user_id BIGINT NOT NULL COMMENT '用户ID',
+                                            title VARCHAR(100) NOT NULL DEFAULT '新对话' COMMENT '对话标题',
+                                            description VARCHAR(500) DEFAULT NULL COMMENT '对话描述',
+                                            message_count INT DEFAULT 0 COMMENT '消息数量',
+                                            last_message_preview VARCHAR(200) DEFAULT NULL COMMENT '最后一条消息预览',
+                                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+                                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+                                            is_deleted TINYINT DEFAULT 0 COMMENT '是否删除 0-未删除 1-已删除',
+                                            INDEX idx_user_id (user_id),
+                                            INDEX idx_session_id (session_id),
+                                            INDEX idx_updated_at (updated_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='对话会话表';
 
 -- ==========================================
 -- 4. 初始化测试数据 (可选)
