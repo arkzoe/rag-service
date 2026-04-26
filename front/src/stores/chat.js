@@ -92,11 +92,35 @@ export const useChatStore = defineStore('chat', () => {
     localStorage.removeItem(STORAGE_KEY_PREFIX + sessionId)
   }
 
+  // 设置会话的消息（用于加载历史记录）
+  const setSessionMessages = (sessionId, messages) => {
+    if (!sessionId) return
+    messagesMap.value.set(sessionId, messages)
+    saveMessages(sessionId)
+  }
+
+  // 清空所有数据（退出登录时使用）
+  const clearAll = () => {
+    messagesMap.value.clear()
+    // 清除所有聊天相关的 localStorage
+    const keysToRemove = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (key && key.startsWith(STORAGE_KEY_PREFIX)) {
+        keysToRemove.push(key)
+      }
+    }
+    keysToRemove.forEach(key => localStorage.removeItem(key))
+  }
+
   return {
+    messagesMap,
     getSessionMessages,
     addMessage,
     clearSessionMessages,
     initSessionMessages,
     deleteSessionMessages,
+    setSessionMessages,
+    clearAll,
   }
 })

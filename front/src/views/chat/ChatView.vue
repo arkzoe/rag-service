@@ -5,7 +5,7 @@ import { Promotion, Delete, ChatDotRound, UserFilled, Loading, ArrowLeft, ArrowR
 import MarkdownIt from 'markdown-it'
 import hljs from 'highlight.js'
 import 'highlight.js/styles/github.css'
-import { sendMessage } from '@/api/chat'
+import { sendMessage, getChatHistory } from '@/api/chat'
 import { useChatStore } from '@/stores/chat'
 import { useChatSessionStore } from '@/stores/chatSession'
 import ChatSessionList from '@/components/ChatSessionList.vue'
@@ -27,8 +27,9 @@ const currentSessionId = computed({
 
 // 消息列表 - 从 chatStore 获取当前会话的消息
 const messages = computed(() => {
-  if (!currentSessionId.value) return []
-  return chatStore.getSessionMessages(currentSessionId.value)
+  const sessionId = chatSessionStore.currentSessionId
+  if (!sessionId) return []
+  return chatStore.getSessionMessages(sessionId)
 })
 
 // 初始化 Markdown 解析器
@@ -80,8 +81,10 @@ const handleSend = async () => {
   const message = inputMessage.value.trim()
   if (!message || loading.value) return
 
+  console.log('发送消息 - 当前会话ID:', chatSessionStore.currentSessionId)
+
   // 如果没有当前会话，先创建一个
-  if (!currentSessionId.value) {
+  if (!chatSessionStore.currentSessionId) {
     const newSession = await chatSessionStore.createSession(message.slice(0, 20))
     if (!newSession) return
     // 初始化新会话的消息
@@ -89,7 +92,8 @@ const handleSend = async () => {
   }
 
   // 保存当前会话ID，防止在请求过程中切换会话导致消息添加到错误的会话
-  const targetSessionId = currentSessionId.value
+  const targetSessionId = chatSessionStore.currentSessionId
+  console.log('发送消息 - 目标会话ID:', targetSessionId)
 
   const userMessage = {
     id: Date.now(),
@@ -104,7 +108,7 @@ const handleSend = async () => {
 
   loading.value = true
   try {
-    const response = await sendMessage(message)
+    const response = await sendMessage(message, targetSessionId)
 
     // 处理响应数据，确保是字符串
     let responseContent = response
@@ -151,9 +155,10 @@ const handleKeyDown = (e) => {
 }
 
 const clearMessages = () => {
-  if (currentSessionId.value) {
-    chatStore.clearSessionMessages(currentSessionId.value)
-    chatStore.initSessionMessages(currentSessionId.value)
+  const sessionId = chatSessionStore.currentSessionId
+  if (sessionId) {
+    chatStore.clearSessionMessages(sessionId)
+    chatStore.initSessionMessages(sessionId)
   }
   ElMessage.success('对话已清空')
 }
@@ -166,10 +171,61 @@ const formatTime = (timestamp) => {
   })
 }
 
-const handleSessionSelect = (session) => {
-  // 切换到选中会话，初始化消息
-  chatStore.initSessionMessages(session.sessionId)
+const handleSessionSelect = async (session) => {
+  // 切换到选中会话
+  chatSessionStore.setCurrentSession(session.sessionId)
+  // 加载历史消息
+  await loadSessionHistory(session.sessionId)
   scrollToBottom()
+}
+
+// 加载会话历史消息
+const loadSessionHistory = async (sessionId) => {
+  console.log('加载历史消息 - 会话ID:', sessionId)
+  if (!sessionId) return
+  
+  try {
+    const history = await getChatHistory(sessionId)
+    console.log('加载历史消息结果 - 会话ID:', sessionId, '记录数:', history?.length || 0)
+    console.log('加载历史消息:', sessionId, history)
+    if (history && history.length > 0) {
+      // 将历史记录转换为消息格式
+      const messages = []
+      history.forEach(record => {
+        // 处理 createTime 可能是数组格式 [year, month, day, hour, minute, second]
+        let timestamp = Date.now()
+        if (record.createTime) {
+          if (Array.isArray(record.createTime)) {
+            const [year, month, day, hour, minute, second] = record.createTime
+            timestamp = new Date(year, month - 1, day, hour, minute, second).getTime()
+          } else {
+            timestamp = new Date(record.createTime).getTime()
+          }
+        }
+        // 用户消息
+        messages.push({
+          id: record.id * 2,
+          role: 'user',
+          content: record.query,
+          timestamp: timestamp,
+        })
+        // AI回复
+        messages.push({
+          id: record.id * 2 + 1,
+          role: 'assistant',
+          content: record.answer,
+          timestamp: timestamp + 1,
+        })
+      })
+      chatStore.setSessionMessages(sessionId, messages)
+    } else {
+      // 没有历史记录，初始化空消息列表
+      chatStore.initSessionMessages(sessionId)
+    }
+  } catch (error) {
+    console.error('加载历史消息失败:', error)
+    chatStore.initSessionMessages(sessionId)
+  }
 }
 
 const handleSessionCreate = (session) => {
@@ -177,11 +233,11 @@ const handleSessionCreate = (session) => {
   chatStore.initSessionMessages(session.sessionId)
 }
 
-onMounted(() => {
-  chatSessionStore.fetchSessions()
-  // 如果有当前会话，初始化该会话的消息
-  if (currentSessionId.value) {
-    chatStore.initSessionMessages(currentSessionId.value)
+onMounted(async () => {
+  await chatSessionStore.fetchSessions()
+  // 如果有当前会话，加载历史消息
+  if (chatSessionStore.currentSessionId) {
+    await loadSessionHistory(chatSessionStore.currentSessionId)
   }
   scrollToBottom()
 })

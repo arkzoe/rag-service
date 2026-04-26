@@ -2,6 +2,8 @@
 import { ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
+import { useChatSessionStore } from '@/stores/chatSession'
+import { useChatStore } from '@/stores/chat'
 import {
   ChatDotRound,
   Upload,
@@ -15,6 +17,8 @@ import {
 const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
+const chatSessionStore = useChatSessionStore()
+const chatStore = useChatStore()
 
 const isCollapse = ref(false)
 const activeMenu = computed(() => route.path)
@@ -33,7 +37,15 @@ const menuItems = [
 ]
 
 const handleLogout = async () => {
-  await userStore.logout()
+  try {
+    await userStore.logout()
+  } catch (error) {
+    console.error('退出登录失败:', error)
+  }
+  // 清空会话 store 数据
+  chatSessionStore.clearAll()
+  // 清空聊天 store 数据
+  chatStore.clearAll()
   router.push('/login')
 }
 

@@ -40,6 +40,17 @@ export const useUserStore = defineStore('user', () => {
       tokenName.value = 'satoken'
       localStorage.removeItem('token')
       localStorage.removeItem('tokenName')
+      // 清除会话相关数据
+      localStorage.removeItem('current_session_id')
+      // 清除所有聊天消息数据
+      const keysToRemove = []
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i)
+        if (key && key.startsWith('chat_messages_')) {
+          keysToRemove.push(key)
+        }
+      }
+      keysToRemove.forEach(key => localStorage.removeItem(key))
       ElMessage.success('已退出登录')
     }
   }

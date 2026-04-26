@@ -104,6 +104,13 @@ export const useChatSessionStore = defineStore('chatSession', () => {
     localStorage.removeItem(STORAGE_KEY)
   }
 
+  // 清空所有数据（退出登录时使用）
+  const clearAll = () => {
+    sessions.value = []
+    currentSessionId.value = ''
+    localStorage.removeItem(STORAGE_KEY)
+  }
+
   // 更新会话信息
   const updateSessionInfo = async (sessionId, data) => {
     try {
@@ -132,6 +139,7 @@ export const useChatSessionStore = defineStore('chatSession', () => {
     deleteSession,
     batchDeleteSessions,
     clearCurrentSession,
+    clearAll,
     updateSessionInfo,
   }
 })
